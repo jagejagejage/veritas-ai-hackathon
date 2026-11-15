@@ -17,7 +17,7 @@ export function FloatingAssistant() {
     else if (previouslyOpen.current && pathname !== "/ai") triggerRef.current?.focus();
     previouslyOpen.current = open;
   }, [open, pathname]);
-  if (pathname === "/ai") return null;
+  if (pathname === "/ai" || pathname === "/how-it-works") return null;
 
   return <div className="fixed bottom-[calc(16px+env(safe-area-inset-bottom))] right-3 z-40 flex flex-col items-end gap-3 sm:bottom-5 sm:right-5">
     {open && <div ref={panelRef} tabIndex={-1} className="floating-chat-panel overflow-hidden rounded-2xl border border-[#dce8e3] bg-white shadow-[0_22px_70px_rgba(20,61,55,.22)] animate-chat-open" aria-label="Floating CashSense AI panel"><ChatInterface compact onClose={() => setOpen(false)}/></div>}

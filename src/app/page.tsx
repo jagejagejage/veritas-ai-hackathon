@@ -128,7 +128,7 @@ export default function Dashboard() {
       <div className="mt-auto">
         <div className="mb-4 rounded-xl bg-[#f0f5f3] p-3.5"><div className="flex items-center gap-2 text-[12px] font-semibold text-[#315e58]"><ShieldCheck size={15}/> Your data stays yours</div><p className="mt-1.5 text-[11px] leading-[1.6] text-[#738983]">Secure by design. Your financial data is never used to train AI.</p></div>
         <a href="#simulator" className="nav-link focus-ring flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-[#708287]"><Settings2 size={17}/>Forecast settings</a>
-        <a href="#help" className="nav-link focus-ring flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-[#708287]"><HelpCircle size={17}/>How it works</a>
+        <Link href="/how-it-works" className="nav-link focus-ring flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-[#708287]"><HelpCircle size={17}/>How it works</Link>
         <div className="mt-4 flex items-center gap-2.5 border-t border-[#e6ecea] px-2 pt-4"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#dceae5] text-[11px] font-semibold text-[#315e58]">JD</div><div className="min-w-0 flex-1"><p className="truncate text-[12px] font-semibold">Jordan Davis</p><p className="text-[10px] text-[#88989c]">Owner</p></div></div>
       </div>
     </aside>
@@ -142,7 +142,7 @@ export default function Dashboard() {
       <input ref={uploadRef} type="file" accept=".csv,text/csv" className="sr-only" onChange={handleUpload} aria-label="Choose a CSV file to import"/>
 
       <main id="overview" className="mx-auto max-w-[1450px] px-4 pb-12 pt-7 sm:px-7 sm:pt-9 lg:px-9">
-        <div className="mb-6 flex flex-col justify-between gap-4 sm:mb-7 sm:flex-row sm:items-end">
+        <div id="import" className="mb-6 flex flex-col justify-between gap-4 sm:mb-7 sm:flex-row sm:items-end">
           <div><div className="flex items-center gap-2"><h1 className="text-[25px] font-semibold tracking-[-1.1px] text-[#17313a] sm:text-[29px]">Your cash, in context.</h1></div><p className="mt-1.5 text-[13px] text-[#829297]">A clearer view of what&apos;s moving and what&apos;s next.</p></div>
           <div className="flex items-center gap-2 self-start sm:self-auto"><Button variant="outline" size="sm" onClick={() => uploadRef.current?.click()}><FileUp size={14}/>Import CSV</Button></div>
         </div>
