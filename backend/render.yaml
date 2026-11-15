@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: cashsense-forecast-api
+    runtime: python
+    region: oregon
+    plan: free
+    branch: dev/jage
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: CASHSENSE_BACKEND_TOKEN
+        generateValue: true
+      - key: CASHSENSE_CORS_ORIGINS
+        value: ""
