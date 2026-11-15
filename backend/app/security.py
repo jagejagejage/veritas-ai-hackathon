@@ -3,12 +3,9 @@ from __future__ import annotations
 
 import hmac
 import json
-import logging
 import time
 from collections import deque
 from typing import Any
-
-logger = logging.getLogger("cashsense.security")
 
 
 class RequestSecurityMiddleware:
@@ -58,21 +55,12 @@ class RequestSecurityMiddleware:
         # Health is intentionally public and reveals no configuration or user data.
         # Let CORS handle preflight without requiring credentials.
         if method != "OPTIONS" and path != "/health":
-            headers = {key.lower(): value for key, value in scope.get("headers", [])}
-            supplied = headers.get(b"x-cashsense-backend-token", b"").decode("utf-8", "ignore")
-            backend_token_configured = bool(self.shared_secret)
-            authentication_header_received = bool(supplied)
-            exact_token_match = backend_token_configured and hmac.compare_digest(supplied, self.shared_secret)
-            logger.warning(
-                "CashSense auth diagnostics backend_token_configured=%s authentication_header_received=%s exact_token_match=%s",
-                backend_token_configured,
-                authentication_header_received,
-                exact_token_match,
-            )
-            if not backend_token_configured:
+            if not self.shared_secret:
                 await self._json(scope, receive, send, 503, "Backend authentication is not configured.")
                 return
-            if not exact_token_match:
+            headers = {key.lower(): value for key, value in scope.get("headers", [])}
+            supplied = headers.get(b"x-cashsense-backend-token", b"").decode("utf-8", "ignore")
+            if not hmac.compare_digest(supplied, self.shared_secret):
                 await self._json(scope, receive, send, 401, "A valid backend credential is required.")
                 return
 
