@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useChat } from "@/components/ai/ChatProvider";
 import { buildForecast, categoryTotals, demoRows, toRecords } from "@/lib/demo-data";
+import type { BackendForecastResult } from "@/lib/backend-integration";
 import { MAX_CSV_BYTES, parseFinancialCsv } from "@/lib/csv-import";
 import type { FinancialContext } from "@/lib/ai/types";
 import type { WeeklyCashFlow } from "@/lib/types";
@@ -60,6 +61,8 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [cashBalance, setCashBalance] = useState<number | null>(null);
+  const [openingCash, setOpeningCash] = useState<number | null>(null);
+  const [backendState, setBackendState] = useState<{ key: string; data: BackendForecastResult | null; error: string | null; loading: boolean }>({ key: "", data: null, error: null, loading: false });
   const [balanceDraft, setBalanceDraft] = useState("");
   const [editingBalance, setEditingBalance] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -67,7 +70,40 @@ export default function Dashboard() {
   const records = useMemo(() => toRecords(rows, source), [rows, source]);
   const totals = useMemo(() => records.reduce((sum, row) => ({ revenue: sum.revenue + row.revenue, expenses: sum.expenses + row.expenses, net: sum.net + row.netCashFlow }), { revenue: 0, expenses: 0, net: 0 }), [records]);
   const average = Math.round(totals.net / Math.max(1, records.length));
-  const forecast = useMemo(() => buildForecast(rows, period, revenueChange, expenseChange, delay), [rows, period, revenueChange, expenseChange, delay]);
+  const localForecast = useMemo(() => buildForecast(rows, period, revenueChange, expenseChange, delay), [rows, period, revenueChange, expenseChange, delay]);
+  const forecastKey = JSON.stringify({ rows, period, openingCash, revenueChange, expenseChange, delay });
+  const currentBackend = backendState.key === forecastKey ? backendState.data : null;
+  const forecast = useMemo(() => currentBackend
+    ? [...localForecast.slice(0, rows.length), ...currentBackend.points.map((point) => ({ ...point, low: point.netCashFlow, high: point.netCashFlow, kind: "forecast" as const }))]
+    : localForecast, [currentBackend, localForecast, rows.length]);
+  const forecastSourceLabel = currentBackend
+    ? `Python backend · ${currentBackend.recommended} selected`
+    : delay > 0 ? "Local fallback estimate · delay control is unsupported by Python"
+      : backendState.error && backendState.key === forecastKey ? "Local fallback estimate · backend unavailable"
+        : backendState.loading && backendState.key === forecastKey ? "Local estimate · connecting to Python backend" : "Local fallback estimate";
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (delay > 0) {
+      setBackendState({ key: forecastKey, data: null, error: null, loading: false });
+      return () => controller.abort();
+    }
+    setBackendState({ key: forecastKey, data: null, error: null, loading: true });
+    fetch("/api/backend/forecast", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rows, horizon: period, openingCash, assumptions: { revenueChangePercent: revenueChange, expenseChange, paymentDelayDays: delay } }),
+      signal: controller.signal,
+    }).then(async (response) => {
+      const body = await response.json() as BackendForecastResult | { error?: string };
+      if (!response.ok) throw new Error("error" in body && body.error ? body.error : "The Python forecasting service is unavailable.");
+      setBackendState({ key: forecastKey, data: body as BackendForecastResult, error: null, loading: false });
+    }).catch((error: unknown) => {
+      if (controller.signal.aborted) return;
+      setBackendState({ key: forecastKey, data: null, error: error instanceof Error ? error.message : "The Python forecasting service is unavailable.", loading: false });
+    });
+    return () => controller.abort();
+  }, [rows, period, openingCash, revenueChange, expenseChange, delay, forecastKey]);
   const chartData = useMemo(() => forecast.map((point, index) => ({
     ...point,
     actual: point.kind === "actual" ? point.netCashFlow : undefined,
@@ -83,14 +119,14 @@ export default function Dashboard() {
     const context: FinancialContext = {
       source: demo ? "demo" : "imported",
       history: rows.slice(-12),
-      forecast: forecast.slice(rows.length),
+      forecast: localForecast.slice(rows.length),
       spendingCategories: categories.map(({ name, value }) => ({ name, value })),
       alerts: [{ title: "Invoice timing may be tight", detail: "A one-week delay in customer payments could reduce next week’s net cash flow." }],
       currentCashBalance: cashBalance,
       assumptions: { revenueChangePercent: revenueChange, expenseChange, paymentDelayDays: delay },
     };
     setFinancialContext(context);
-  }, [rows, demo, forecast, categories, cashBalance, revenueChange, expenseChange, delay, setFinancialContext]);
+  }, [rows, demo, localForecast, categories, cashBalance, revenueChange, expenseChange, delay, setFinancialContext]);
 
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -100,7 +136,7 @@ export default function Dashboard() {
       if (file.size > MAX_CSV_BYTES) throw new Error("CSV files must be 1 MB or smaller.");
       const parsed = parseFinancialCsv(await file.text());
       setRows(parsed.rows); setSource("import");
-      setCashBalance(parsed.startingCashBalance);
+      setCashBalance(parsed.startingCashBalance); setOpeningCash(parsed.startingCashBalance);
       setImportSuccess(`${parsed.rows.length} weeks imported from ${file.name}.${parsed.startingCashBalance === null ? " No starting cash balance was supplied; add it separately if you want to see projected cash." : " Starting cash balance imported."}`);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "We couldn't read that file. Check the CSV and try again.");
@@ -163,15 +199,16 @@ export default function Dashboard() {
         <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.72fr)_minmax(295px,.86fr)]">
           <section id="forecast" className="panel min-w-0 px-4 py-5 sm:px-6 sm:py-6">
             <PanelTitle title="Cash flow" note="Weekly money in minus money out" action={<div className="flex rounded-lg bg-[#f3f6f5] p-0.5" role="group" aria-label="Forecast period">{([4, 8, 12] as const).map((n) => <button key={n} onClick={() => setPeriod(n)} aria-pressed={period === n} className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${period === n ? "bg-white text-[#244a4e] shadow-sm" : "text-[#849397] hover:text-[#405960]"}`}>{n}w</button>)}</div>}/>
-            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-[#829297]"><span className="flex items-center gap-1.5"><i className="h-[3px] w-4 rounded bg-[#3c9c8a]"/>Past weeks</span><span className="flex items-center gap-1.5"><i className="h-[3px] w-4 border-t-2 border-dashed border-[#72b5a7]"/>Estimate</span><span className="flex items-center gap-1.5"><i className="h-2 w-4 rounded-sm bg-[#eaf5f1]"/>Possible range</span><span className="ml-auto text-[10px] text-[#9aa7aa]">{demo ? "Illustrative demo estimate" : "Planning estimate"}</span></div>
+            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-[#829297]"><span className="flex items-center gap-1.5"><i className="h-[3px] w-4 rounded bg-[#3c9c8a]"/>Past weeks</span><span className="flex items-center gap-1.5"><i className="h-[3px] w-4 border-t-2 border-dashed border-[#72b5a7]"/>Estimate</span>{!currentBackend && <span className="flex items-center gap-1.5"><i className="h-2 w-4 rounded-sm bg-[#eaf5f1]"/>Local estimate range</span>}<span className="ml-auto text-[10px] text-[#9aa7aa]">{forecastSourceLabel}</span></div>
             <div className="mt-2 h-[280px] w-full sm:h-[320px]" role="img" aria-label="Chart showing actual weekly net cash flow followed by projected weekly cash flow. Adjust assumptions in What if to update this estimate."><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{ top: 12, right: 5, left: 0, bottom: 0 }}>
               <defs><linearGradient id="actualFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#5cae9e" stopOpacity={.2}/><stop offset="95%" stopColor="#5cae9e" stopOpacity={0}/></linearGradient><linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#b4ddd2" stopOpacity={.48}/><stop offset="95%" stopColor="#b4ddd2" stopOpacity={.04}/></linearGradient></defs>
-              <CartesianGrid stroke="#edf1ef" vertical={false}/><XAxis dataKey="week" tick={{ fill: "#8b999c", fontSize: 10 }} axisLine={false} tickLine={false} tickMargin={10} interval="preserveStartEnd"/><YAxis tickFormatter={(v: number) => `${v < 0 ? "−" : ""}$${Math.abs(v / 1000).toFixed(0)}k`} tick={{ fill: "#93a0a2", fontSize: 10 }} axisLine={false} tickLine={false} width={47}/><ReferenceLine y={0} stroke="#cbd6d2" strokeDasharray="3 4"/><Tooltip content={<ChartTooltip/>}/>
-              <Area type="monotone" dataKey="bandHigh" stroke="none" fill="url(#forecastFill)" connectNulls name="high"/>
-              <Area type="monotone" dataKey="bandLow" stroke="none" fill="#fff" connectNulls name="low"/>
+              <CartesianGrid stroke="#edf1ef" vertical={false}/><XAxis dataKey="week" tick={{ fill: "#8b999c", fontSize: 10 }} axisLine={false} tickLine={false} tickMargin={10} interval="preserveStartEnd"/><YAxis tickFormatter={(v: number) => `${v < 0 ? "−" : ""}$${Math.abs(v / 1000).toFixed(0)}k`} tick={{ fill: "#93a0a2", fontSize: 10 }} axisLine={false} tickLine={false} width={47}/><ReferenceLine y={0} stroke="#cbd6d2" strokeDasharray="3 4"/><Tooltip content={<ChartTooltip showRange={!currentBackend}/>} />
+              {!currentBackend && <><Area type="monotone" dataKey="bandHigh" stroke="none" fill="url(#forecastFill)" connectNulls name="high"/>
+              <Area type="monotone" dataKey="bandLow" stroke="none" fill="#fff" connectNulls name="low"/></>}
               <Area type="monotone" dataKey="actual" stroke="#399989" strokeWidth={2.6} fill="url(#actualFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0, fill: "#2d8375" }} connectNulls/>
               <Area type="monotone" dataKey="estimate" stroke="#399989" strokeWidth={2.4} strokeDasharray="6 5" fill="url(#forecastFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0, fill: "#2d8375" }} connectNulls/>
             </AreaChart></ResponsiveContainer></div>
+            {currentBackend && currentBackend.warnings.length > 0 && <div className="mt-2 rounded-lg border border-[#efe9df] bg-[#fdfbf7] px-3 py-2.5 text-[10px] leading-4 text-[#7c8989]" role="status">Python backend notes: {currentBackend.warnings.join(" ")}</div>}
             <div className="mt-2 flex items-center gap-2 rounded-lg bg-[#f5f8f7] px-3 py-2.5"><Lightbulb size={14} className="shrink-0 text-[#75968b]"/><p className="text-[11px] leading-5 text-[#71858a]">Based on your recent weeks, your average net cash flow is <strong className="font-semibold text-[#315c57]">{money(average)} per week</strong>.</p></div>
           </section>
 
@@ -187,15 +224,15 @@ export default function Dashboard() {
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(330px,1fr)]">
           <section id="simulator" className="panel overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1ef] px-5 py-4 sm:px-6"><div className="flex items-center gap-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#e8f4f0] text-[#277f70]"><SlidersHorizontal size={15}/></span><div><h2 className="text-[14px] font-semibold">What if things change?</h2><p className="text-[11px] text-[#879599]">See how your next few weeks could look</p></div></div><span className="inline-flex items-center gap-1 rounded-full border border-[#e2ece8] px-2 py-1 text-[9px] font-medium text-[#81918f]"><Sparkles size={10}/>{demo ? "Demo estimate" : "Planning estimate"}</span></div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1ef] px-5 py-4 sm:px-6"><div className="flex items-center gap-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#e8f4f0] text-[#277f70]"><SlidersHorizontal size={15}/></span><div><h2 className="text-[14px] font-semibold">What if things change?</h2><p className="text-[11px] text-[#879599]">See how your next few weeks could look</p></div></div><span className="inline-flex items-center gap-1 rounded-full border border-[#e2ece8] px-2 py-1 text-[9px] font-medium text-[#81918f]"><Sparkles size={10}/>{forecastSourceLabel}</span></div>
             <div className="grid gap-5 p-5 sm:grid-cols-[1.03fr_.97fr] sm:px-6 sm:py-5">
               <div className="space-y-4">
-                <RangeControl label="Customer payments arrive later" value={delay} min={0} max={21} step={1} suffix="days" onChange={setDelay} help="A longer wait means money arrives later."/>
+                <RangeControl label="Customer payments arrive later" value={delay} min={0} max={21} step={1} suffix="days" onChange={setDelay} help={delay > 0 ? "Day-based payment delays are not supported by the Python API; this uses the local fallback." : "A longer wait means money arrives later."}/>
                 <RangeControl label="Unexpected expense" value={expenseChange} min={0} max={10000} step={250} prefix="$" onChange={setExpenseChange} help="Add a one-time cost to your first forecast week."/>
                 <RangeControl label="Revenue changes" value={revenueChange} min={-30} max={30} step={1} suffix="%" onChange={setRevenueChange} help="Adjust expected sales and invoice payments."/>
                 <button onClick={() => { setDelay(0); setExpenseChange(0); setRevenueChange(0); }} className="focus-ring rounded-md py-1 text-[11px] font-medium text-[#67817f] hover:text-[#176f65]">Reset assumptions</button>
               </div>
-              <div className="scenario-output flex flex-col justify-between rounded-xl p-4 sm:p-5" aria-live="polite"><div><p className="text-[11px] font-medium text-[#7b8d8c]">Estimated weekly net cash flow</p><p className="mt-2 text-[30px] font-semibold tracking-[-1.3px] text-[#214a46]">{money(forecast[rows.length]?.netCashFlow ?? 0)}</p><p className="mt-1 text-[11px] text-[#768987]">With these assumptions applied</p><div className="mt-4 border-t border-[#dde9e4] pt-3"><p className="text-[10px] text-[#879693]">Compared with your recent average</p><p className={`mt-1 text-[13px] font-semibold ${(forecast[rows.length]?.netCashFlow ?? 0) >= average ? "text-[#36816f]" : "text-[#a46c45]"}`}>{(forecast[rows.length]?.netCashFlow ?? 0) - average >= 0 ? "+" : "−"}{money(Math.abs((forecast[rows.length]?.netCashFlow ?? 0) - average))}<span className="ml-1 font-normal text-[#859391]">per week</span></p><div className="scenario-meter mt-4" aria-hidden="true"><span style={{ width: `${Math.max(5, Math.min(100, 50 + ((forecast[rows.length]?.netCashFlow ?? 0) - average) / Math.max(Math.abs(average), 1) * 35))}%` }}/></div><p className="mt-2 text-[10px] text-[#768987]">Your forecast above updates as you adjust these assumptions.</p></div></div><p className="mt-5 flex items-start gap-1.5 text-[10px] leading-[1.6] text-[#8a9895]"><CircleAlert size={12} className="mt-0.5 shrink-0"/>A planning estimate, not a guarantee. No starting balance assumed.</p></div>
+              <div className="scenario-output flex flex-col justify-between rounded-xl p-4 sm:p-5" aria-live="polite"><div><p className="text-[11px] font-medium text-[#7b8d8c]">Estimated weekly net cash flow</p><p className="mt-2 text-[30px] font-semibold tracking-[-1.3px] text-[#214a46]">{money(forecast[rows.length]?.netCashFlow ?? 0)}</p><p className="mt-1 text-[11px] text-[#768987]">With these assumptions applied · {currentBackend ? "Python backend what-if" : "local fallback"}</p><div className="mt-4 border-t border-[#dde9e4] pt-3"><p className="text-[10px] text-[#879693]">Compared with your recent average</p><p className={`mt-1 text-[13px] font-semibold ${(forecast[rows.length]?.netCashFlow ?? 0) >= average ? "text-[#36816f]" : "text-[#a46c45]"}`}>{(forecast[rows.length]?.netCashFlow ?? 0) - average >= 0 ? "+" : "−"}{money(Math.abs((forecast[rows.length]?.netCashFlow ?? 0) - average))}<span className="ml-1 font-normal text-[#859391]">per week</span></p><div className="scenario-meter mt-4" aria-hidden="true"><span style={{ width: `${Math.max(5, Math.min(100, 50 + ((forecast[rows.length]?.netCashFlow ?? 0) - average) / Math.max(Math.abs(average), 1) * 35))}%` }}/></div><p className="mt-2 text-[10px] text-[#768987]">Your forecast above updates as you adjust these assumptions.</p>{currentBackend && currentBackend.backtest.available && currentBackend.backtest.selectionInSample && currentBackend.backtest.net_flow && <p className="mt-2 text-[10px] leading-4 text-[#768987]">Backend rolling backtest MAE: {money(currentBackend.backtest.net_flow.model_mae)} per week. Method selection and scoring use overlapping history; this is not holdout accuracy.</p>}</div></div><p className="mt-5 flex items-start gap-1.5 text-[10px] leading-[1.6] text-[#8a9895]"><CircleAlert size={12} className="mt-0.5 shrink-0"/>A planning estimate, not a guarantee. No starting balance assumed.</p></div>
             </div>
           </section>
 
@@ -217,8 +254,8 @@ function RangeControl({ label, value, min, max, step, onChange, help, suffix = "
   return <label className="block"><span className="flex items-center justify-between gap-2 text-[11px] font-medium text-[#4d666c]"><span>{label}</span><span className="min-w-[48px] text-right font-semibold text-[#376c64]">{prefix}{value.toLocaleString()}{suffix && ` ${suffix}`}</span></span><input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} className="range-input mt-2 h-1.5 w-full cursor-pointer" aria-label={label}/><span className="mt-1 block text-[10px] leading-4 text-[#93a0a1]">{help}</span></label>;
 }
 
-function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ payload: { kind: string; netCashFlow: number; low: number; high: number }; dataKey?: string }>; label?: string }) {
+function ChartTooltip({ active, payload, label, showRange = true }: { active?: boolean; payload?: Array<{ payload: { kind: string; netCashFlow: number; low: number; high: number }; dataKey?: string }>; label?: string; showRange?: boolean }) {
   if (!active || !payload?.length) return null;
   const point = payload[0].payload;
-  return <div className="rounded-lg border border-[#e6ecea] bg-white px-3 py-2 shadow-[0_4px_16px_rgba(23,46,55,.08)]"><p className="mb-1 text-[10px] text-[#879599]">{label} · {point.kind === "actual" ? "Past week" : "Estimate"}</p><p className="text-[12px] font-semibold text-[#315c57]">Net {money(point.netCashFlow)}</p>{point.kind === "forecast" && <p className="mt-0.5 text-[10px] text-[#91a09d]">Possible range: {money(point.low)} to {money(point.high)}</p>}</div>;
+  return <div className="rounded-lg border border-[#e6ecea] bg-white px-3 py-2 shadow-[0_4px_16px_rgba(23,46,55,.08)]"><p className="mb-1 text-[10px] text-[#879599]">{label} · {point.kind === "actual" ? "Past week" : "Estimate"}</p><p className="text-[12px] font-semibold text-[#315c57]">Net {money(point.netCashFlow)}</p>{point.kind === "forecast" && showRange && <p className="mt-0.5 text-[10px] text-[#91a09d]">Local estimate range: {money(point.low)} to {money(point.high)}</p>}</div>;
 }

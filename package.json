@@ -6,10 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "eslint src tests",
     "typecheck": "tsc --noEmit",
     "test:ai": "node --experimental-strip-types --test tests/ai/*.test.mts",
-    "test:data": "node --experimental-strip-types --test tests/data/*.test.mts"
+    "test:data": "node --experimental-strip-types --test tests/data/*.test.mts",
+    "test:integration": "node --experimental-strip-types --test tests/integration/*.test.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
