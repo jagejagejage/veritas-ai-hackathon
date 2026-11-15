@@ -243,7 +243,11 @@ export async function handleChatRequest(request: Request, env: Environment, depe
   if (length > MAX_REQUEST_CHARS) return json({ error: "This conversation is too large. Start a new conversation and try again." }, 413);
 
   let body: unknown;
-  try { body = await request.json(); }
+  try {
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).byteLength > MAX_REQUEST_CHARS) return json({ error: "This conversation is too large. Start a new conversation and try again." }, 413);
+    body = JSON.parse(rawBody);
+  }
   catch { return json({ error: "The chat request must contain valid JSON." }, 400); }
   if (!isObject(body)) return json({ error: "The chat request is invalid." }, 400);
   const messages = validateMessages(body.messages);

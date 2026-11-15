@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useChat } from "@/components/ai/ChatProvider";
 import { buildForecast, categoryTotals, demoRows, toRecords } from "@/lib/demo-data";
-import { parseFinancialCsv } from "@/lib/csv-import";
+import { MAX_CSV_BYTES, parseFinancialCsv } from "@/lib/csv-import";
 import type { FinancialContext } from "@/lib/ai/types";
 import type { WeeklyCashFlow } from "@/lib/types";
 
@@ -97,6 +97,7 @@ export default function Dashboard() {
     if (!file) return;
     setImportError(""); setImportSuccess(""); setIsImporting(true);
     try {
+      if (file.size > MAX_CSV_BYTES) throw new Error("CSV files must be 1 MB or smaller.");
       const parsed = parseFinancialCsv(await file.text());
       setRows(parsed.rows); setSource("import");
       setCashBalance(parsed.startingCashBalance);

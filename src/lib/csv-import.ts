@@ -3,6 +3,8 @@ import type { WeeklyCashFlow } from "@/lib/types";
 const REQUIRED = ["week", "sales_walkin", "invoices_collected", "supplies", "payroll", "rent", "other"] as const;
 const AMOUNTS = REQUIRED.slice(1);
 const STARTING_BALANCE = "starting_cash_balance";
+export const MAX_CSV_BYTES = 1_048_576;
+export const MAX_CSV_DATA_ROWS = 520;
 
 export interface CsvImportResult {
   rows: WeeklyCashFlow[];
@@ -59,8 +61,10 @@ function weekOrder(value: string): { value: number; kind: "sequence" | "date" } 
 }
 
 export function parseFinancialCsv(text: string): CsvImportResult {
+  if (new TextEncoder().encode(text).byteLength > MAX_CSV_BYTES) throw new Error("CSV files must be 1 MB or smaller.");
   const table = parseCsvRows(text.replace(/^\uFEFF/, ""));
   if (table.length < 2) throw new Error("Add a header row and at least one week of data.");
+  if (table.length - 1 > MAX_CSV_DATA_ROWS) throw new Error(`CSV files can contain at most ${MAX_CSV_DATA_ROWS} weeks.`);
   const headers = table[0].map((header) => header.trim().toLowerCase());
   const missing = REQUIRED.filter((column) => !headers.includes(column));
   if (missing.length) throw new Error(`Missing required columns: ${missing.join(", ")}. Add them to the CSV header and try again.`);
@@ -76,6 +80,7 @@ export function parseFinancialCsv(text: string): CsvImportResult {
     const values = table[i];
     const week = values[indexes.week]?.trim() ?? "";
     const rowNumber = i + 1;
+    if (values.length !== headers.length) throw new Error(`Row ${rowNumber} has ${values.length} columns; the header has ${headers.length}. Check for missing or extra commas.`);
     if (!week) throw new Error(`Row ${rowNumber} is missing its week. Add a date or week label.`);
     const key = week.toLowerCase();
     if (seenWeeks.has(key)) throw new Error(`Row ${rowNumber} duplicates week “${week}”. Remove the duplicate or correct its date.`);
