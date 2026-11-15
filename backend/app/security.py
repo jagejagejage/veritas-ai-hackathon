@@ -63,7 +63,7 @@ class RequestSecurityMiddleware:
             backend_token_configured = bool(self.shared_secret)
             authentication_header_received = bool(supplied)
             exact_token_match = backend_token_configured and hmac.compare_digest(supplied, self.shared_secret)
-            logger.info(
+            logger.warning(
                 "CashSense auth diagnostics backend_token_configured=%s authentication_header_received=%s exact_token_match=%s",
                 backend_token_configured,
                 authentication_header_received,
