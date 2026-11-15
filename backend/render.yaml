@@ -3,7 +3,7 @@ services:
     name: cashsense-forecast-api
     runtime: python
     region: oregon
-    plan: starter
+    plan: free
     branch: dev/jage
     rootDir: backend
     buildCommand: pip install -r requirements.txt

@@ -24,11 +24,20 @@ CORS is deny-by-default. `CASHSENSE_CORS_ORIGINS` may contain a comma-separated 
 
 FastAPI caps request bodies at 1 MB and applies a process-local limit of 120 requests per minute across the instance. The Next proxy caps request bodies at 256 KB. These limits protect parsing and bound basic abuse, but are instance-local and are not a distributed rate limiter. Keep the Python service to one instance until a shared rate-limit store is configured, and enable host/platform edge rate limits before substantial public use.
 
-## Hosting plan
+## Free hosting plan
 
-The simplest Vercel-compatible arrangement is a separate Render Python web service using the included [`backend/render.yaml`](../backend/render.yaml), with the service's HTTPS URL and generated secret configured in Vercel. This is an authenticated HTTPS endpoint, not a private Vercel-to-Render network connection: every API route requires the shared secret, CORS denies browser origins by default, and `/health` is the only public route. Do not deploy it without the blueprint-generated token. Use the Render dashboard's secret environment variable controls to copy that value into Vercel's `CASHSENSE_BACKEND_TOKEN`; never paste it into a terminal transcript, source file, or chat.
+Render Free is the simplest no-card fit for the existing FastAPI app and Vercel proxy. The included [`backend/render.yaml`](../backend/render.yaml) now selects Render's Free web-service plan. The service uses an HTTPS public origin, but it is protected: all API routes except `/health` require the shared secret, and CORS denies browser origins by default. This is authenticated HTTPS, not a private Vercel-to-Render network connection.
 
-The Render blueprint sets its root to `backend`, installs the existing `backend/requirements.txt`, starts Uvicorn, provides `/health` for host health checks, generates a backend token, disables auto-deploys, and leaves CORS empty. After creating the service manually, configure Vercel server-only variables:
+The backend currently depends on FastAPI, Uvicorn, Pydantic, and multipart parsing; it does not use scikit-learn, NumPy, pandas, PyTorch, or another numerical ML runtime. A local Python process completing a 12-week forecast peaked at about 46 MiB RSS. This is a small sample on the development machine, not a provider guarantee, but leaves substantial headroom under Render Free's 512 MiB memory limit.
+
+Render Free sleeps after 15 minutes without traffic and may take about one minute to wake. The Next.js proxy times out after eight seconds and correctly falls back to the labeled local estimate if the backend is asleep. Before a demo, request `GET https://<service>.onrender.com/health` to wake it, wait for `{"status":"ok"}`, then use forecasts. Free instances can restart at any time and have ephemeral files; keep one instance because the rate limiter and dataset store are process-local. Free services cannot receive private network traffic, scale to multiple instances, or keep a persistent disk. Render gives each workspace 750 free instance-hours per month; free compute suspends on exhaustion. Without a payment method, exhausted outbound bandwidth suspends free services rather than billing for overage. Treat this as a hackathon/demo host, not production hosting for sensitive financial records.
+
+To set it up:
+
+1. Connect the Git provider in Render and create a Web Service from this repository's `backend/render.yaml` blueprint. Select the `dev/jage` branch and Free plan; keep automatic deploys off as configured.
+2. Confirm the generated `CASHSENSE_BACKEND_TOKEN` is present as a secret environment variable. Leave `CASHSENSE_CORS_ORIGINS` empty.
+3. Deploy manually from Render and wait for its `/health` check to pass. Copy the service HTTPS origin, not the health path.
+4. In the Vercel project's server-side environment settings, configure:
 
 | Variable | Value |
 | --- | --- |
@@ -36,8 +45,10 @@ The Render blueprint sets its root to `backend`, installs the existing `backend/
 | `CASHSENSE_BACKEND_TOKEN` | The exact generated Render `CASHSENSE_BACKEND_TOKEN` secret |
 | `CASHSENSE_AI_MODE` | `mock` |
 
-The Next proxy rejects non-HTTPS remote backend URLs. Local loopback HTTP is permitted for development only. Do not configure `CASHSENSE_BACKEND_URL` or the shared token as `NEXT_PUBLIC_*`. Keep the Python service to one instance while using its process-local limiter and in-memory dataset store. The dashboard forecasting requests are stateless, but other dataset endpoints remain process-local. Put a platform-level rate limit in front of the public service before enabling broad access.
+The Next proxy rejects non-HTTPS remote backend URLs. Local loopback HTTP is permitted for development only. Do not configure `CASHSENSE_BACKEND_URL` or the shared token as `NEXT_PUBLIC_*`. Never put the token in Git, a terminal command, or a public issue. Keep the Python service to one instance while using its process-local limiter and in-memory dataset store. The dashboard forecasting requests are stateless, but other dataset endpoints remain process-local. Put a platform-level rate limit in front of the public service before enabling broad access.
 
-No service has been created or deployed. Required external setup is a Render account with access to this repository, a manually created service from the blueprint, and Vercel access to set the URL and copy the generated token into a server-only secret variable. There is no Anthropic credential requirement; Anthropic remains in mock mode.
+Other free options are less suitable under the no-payment-information constraint: Koyeb requires a card for verification (including a temporary pre-authorization), while Fly.io requires a card and only offers a short trial. Vercel's Python runtime and multi-service feature could colocate FastAPI with Next.js, but Services is beta and would require restructuring this project and the proxy to use private service bindings; it is a reasonable later migration if the team wants one provider and accepts that beta configuration. Render Free works with the current architecture and secret-token proxy without application changes.
+
+No service has been created or deployed. Required external setup is a Render account with access to this repository and manual deployment access, plus Vercel access to set the URL and copy the generated token into a server-only secret variable. No payment method is needed for Render Free. There is no Anthropic credential requirement; Anthropic remains in mock mode.
 
 Anthropic remains in mock mode. The AI context continues using the local estimate and is not switched to Python results.

@@ -23,7 +23,9 @@ python scripts/evaluate_holdout.py
 
 This separates method selection (first five weeks) from evaluation (last three weeks). Its output is preserved in [`docs/forecast-holdout-sample.json`](../docs/forecast-holdout-sample.json). The small illustrative sample is not evidence of accuracy on real businesses. The API's own backtest is selection-in-sample and must not be presented as a holdout evaluation.
 
-Optional env var: `CASHSENSE_CORS_ORIGINS` (comma-separated, default `*`). Set exact allowed origins before exposing a service publicly. CORS is not authentication.
+Required for API access: set a strong `CASHSENSE_BACKEND_TOKEN` in the server environment. Every route except `GET /health` and CORS preflight requires it in the `X-CashSense-Backend-Token` header. The service fails closed when the token is unset.
+
+Optional env var: `CASHSENSE_CORS_ORIGINS` (comma-separated, default empty, which denies browser origins). The dashboard calls FastAPI through its same-origin Next.js server proxy, so direct browser CORS access is not needed. CORS is not authentication. See [`../docs/backend-integration.md`](../docs/backend-integration.md) for deployment configuration.
 
 ## CSV format
 
@@ -57,17 +59,21 @@ Every analysis endpoint accepts either `dataset_id` or inline `rows` (not both),
 ### Quick tour
 
 ```bash
-curl -s -X POST localhost:8000/datasets/sample                       # -> {"dataset_id": "abc123...", ...}
+curl -s -X POST localhost:8000/datasets/sample \
+  -H "x-cashsense-backend-token: $CASHSENSE_BACKEND_TOKEN"          # -> {"dataset_id": "abc123...", ...}
 
 curl -s -X POST localhost:8000/forecast -H 'content-type: application/json' \
+  -H "x-cashsense-backend-token: $CASHSENSE_BACKEND_TOKEN" \
   -d '{"dataset_id":"abc123","horizon":8}'
 
 # "What if sales drop 20% and costs rise 10%?" applied to the predicted weeks
 curl -s -X POST localhost:8000/whatif -H 'content-type: application/json' \
+  -H "x-cashsense-backend-token: $CASHSENSE_BACKEND_TOKEN" \
   -d '{"dataset_id":"abc123","sales_change_pct":-20,"expense_change_pct":10}'
 
 # "What if my catering customer pays 2 weeks late?" applied to the uploaded weeks as given
 curl -s -X POST localhost:8000/whatif -H 'content-type: application/json' \
+  -H "x-cashsense-backend-token: $CASHSENSE_BACKEND_TOKEN" \
   -d '{"dataset_id":"abc123","basis":"plan","ops":[{"op":"shift","field":"invoices_collected","from_week":6,"by_weeks":2,"amount":"all"}]}'
 ```
 
@@ -92,7 +98,7 @@ curl -s -X POST localhost:8000/whatif -H 'content-type: application/json' \
 - Fewer than 5 weeks means no backtest; the baseline is used.
 - The dataset store is in memory and resets on restart.
 - Dataset IDs are not shared between instances. A multi-instance/serverless deployment needs stateless request bodies or shared durable storage before using IDs across requests.
-- The current service has no authentication or shared rate limiting. Do not expose it publicly with real financial data as-is.
+- The API requires a shared token and has a process-local 120 requests/minute limit. The limit is not shared across instances.
 - No Anthropic key is used by this Python service. CashSense's existing Claude route is separate and remains in mock mode unless deliberately configured server-side.
 
 ## Connecting a chatbot
