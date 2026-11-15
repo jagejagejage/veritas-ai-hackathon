@@ -60,6 +60,35 @@ test("live mode uses only the server-configured model", async () => {
   assert.equal((await response.json()).mock, false);
 });
 
+test("production live mode fails closed before any provider call", async () => {
+  let calls = 0;
+  const response = await handleChatRequest(request([{ role: "user", content: "Summarize my cash flow" }]), {
+    NODE_ENV: "production", CASHSENSE_AI_MODE: "live", ANTHROPIC_API_KEY: "server-only-test-key", ANTHROPIC_MODEL: "claude-haiku-4-5-20251001",
+  }, { callModel: async () => { calls += 1; return "unexpected"; }, limiter: new RateLimiter() });
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /disabled in production/);
+  assert.equal(calls, 0);
+});
+
+test("oversized bodies without a content-length header are stopped before parsing", async () => {
+  const oversized = new Request("http://localhost/api/ai/chat", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: `{"padding":"${"x".repeat(48_000)}"}`,
+  });
+  let calls = 0;
+  const response = await handleChatRequest(oversized, {}, { callModel: async () => { calls += 1; return "unexpected"; }, limiter: new RateLimiter() });
+  assert.equal(response.status, 413);
+  assert.equal(calls, 0);
+});
+
+test("model instructions identify forecasts as local simulator estimates, not Python results", async () => {
+  let prompt = "";
+  await handleChatRequest(request([{ role: "user", content: "Summarize my cash flow" }]), {
+    CASHSENSE_AI_MODE: "live", ANTHROPIC_API_KEY: "server-only-test-key", ANTHROPIC_MODEL: "claude-haiku-4-5-20251001",
+  }, { callModel: async ({ system }) => { prompt = system; return "A cautious summary."; }, limiter: new RateLimiter() });
+  assert.match(prompt, /local frontend simulator estimates/);
+  assert.match(prompt, /never describe them as Python results/);
+});
+
 test("invalid requests and financial context are rejected", async () => {
   const badMessages = await handleChatRequest(request([{ role: "assistant", content: "I begin first" }]), {}, { callModel: async () => "", limiter: new RateLimiter() });
   assert.equal(badMessages.status, 400);

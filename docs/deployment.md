@@ -30,11 +30,11 @@ Only after choosing a model and agreeing to send user-provided financial data to
 
 1. Add `ANTHROPIC_API_KEY` through Vercel's encrypted Environment Variables UI. Do not paste it into source, a commit, a build argument, or a `NEXT_PUBLIC_` variable.
 2. Set `ANTHROPIC_MODEL` to the approved model ID.
-3. Keep `CASHSENSE_AI_MODE=mock` while adding and checking the secret/model configuration. Then switch `CASHSENSE_AI_MODE=live` only in a controlled preview first.
-4. Exercise successful responses, provider errors, and configured spend limits in Anthropic. Confirm the data disclosure and retention policy before making live mode available to users.
-5. Promote live configuration only after review. To return to mock, set the mode back to `mock` and redeploy; remove the secret if it is no longer needed.
+3. Keep `CASHSENSE_AI_MODE=mock` in every hosted environment while preparing configuration. Production builds (including preview deployments) are guarded from live provider calls.
+4. Verify the live-mode request path locally with a stubbed model callback. A real Anthropic call can incur charges and requires separate approval.
+5. Do not enable live mode on a public deployment yet. The route deliberately returns 503 for production live mode because its in-memory limiter is instance-local and no shared rate limit or hard spend boundary exists. Add those controls, confirm provider spend limits, review the data disclosure/retention policy, and then remove the production guard in a reviewed change before activation.
 
-The chat endpoint caps message count, message length, context shape, output tokens, and request bytes. The existing in-memory limiter (12 requests/minute per observed address) is instance-local and is not an effective global limit across serverless instances. Do not treat it as a cost-control or abuse-prevention boundary for a public live deployment. Add a shared rate-limit store or edge/platform rate limiting before enabling live mode publicly. Also set provider account limits and monitor spend.
+The chat endpoint caps message count, message length, context shape, output tokens, and request bytes, and bounds streamed request-body reads. The existing in-memory limiter (12 requests/minute per observed address) is instance-local and is not an effective global limit across serverless instances. Production live mode is therefore disabled in the API route. Add a shared rate-limit store or edge/platform rate limiting before enabling live mode publicly. Also set provider account limits and monitor spend.
 
 ## Preview workflow
 
