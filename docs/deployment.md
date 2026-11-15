@@ -49,17 +49,18 @@ For a preview, verify:
 - Check the response headers for `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy`.
 - Review Vercel function logs for errors. Current API errors are deliberately generic and do not log prompt or financial content.
 
-## Python forecasting backend (future work)
+## Python forecasting backend
 
-The backend is not integrated. Do not configure a guessed endpoint. `docs/backend-integration.md`, `src/lib/types.ts`, and `src/lib/backend-adapter.ts` describe a provisional payload only; Liam must supply the real OpenAPI/schema, endpoints, auth, units, and error contract first.
+Liam's FastAPI backend is included in `backend/` and has passed its local tests, but it is not deployed or connected to the dashboard. Vercel continues to run the Next.js app alone. The backend contract and exact integration gaps are in [`backend-integration.md`](./backend-integration.md).
 
-After that contract is confirmed:
+For deployment, host the Python service separately (or use a deliberately tested Python-capable platform). Before doing so, add authentication, a shared rate limit, TLS, monitoring, and a durable/shared dataset strategy; the current memory store and wildcard CORS default are not suitable for a public multi-instance service. Then:
 
-1. Add a server-only variable such as `CASHSENSE_BACKEND_URL` to Vercel. Never expose credentials or private service URLs through `NEXT_PUBLIC_` variables. Keep a separate URL per environment.
-2. Prefer a same-origin Next.js server route that calls the Python service server-to-server. Validate the URL, request and response schemas, and timeouts; do not forward arbitrary client URLs. Use the authentication scheme Liam specifies and store its credential as a server-only Vercel secret. Do not assume a bearer token or invent an endpoint.
-3. If the browser must call the API directly, Liam's service must allow the exact Vercel preview and production origins, handle preflight for the required methods/headers, and never use wildcard origins with credentials. Prefer server-to-server calls so CORS is not the security boundary.
-4. Define timeout, retry, rate-limit, and provider/backend error mapping from the actual contract. Keep mock/local forecasting as a graceful fallback and label backend-derived values and uncertainty accurately.
-5. Avoid logging request bodies, business figures, credentials, or user prompts. Test unavailable service, timeout, invalid response, authentication failure, and CORS behavior before rollout.
+1. Store the backend URL and any credential in Vercel server-only environment variables. Do not use `NEXT_PUBLIC_` names.
+2. Add a same-origin Next.js server route that makes a server-to-server request with strict request/response schemas and bounded timeouts. Do not forward arbitrary client URLs.
+3. Precisely map dashboard weekly rows, cash-balance semantics, and scenario controls; the existing provisional TypeScript adapter does not match this API. Keep local forecasts as a fallback and label their source.
+4. Test backend outages, timeout, invalid response, authentication failure, and rate limiting before enabling the connection. Avoid logging business figures or request bodies.
+
+There is no selected host, live URL, credential, or deployment configuration yet. No deployment has been performed.
 
 ## Rollback
 

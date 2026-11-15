@@ -8,6 +8,8 @@ Our shared GitHub repository for the Veritas AI High School Hackathon.
 
 **Goal:** Build and launch a working AI project together during the hackathon.
 
+The Next.js dashboard and FastAPI forecasting backend are separate components. The backend source and local instructions are in [`backend/`](./backend/); it is not yet hosted or connected to the dashboard. See [`docs/backend-integration.md`](./docs/backend-integration.md) and [`docs/deployment.md`](./docs/deployment.md) for the current contract and deployment gaps.
+
 ## Branches
 
 | Branch | Purpose |

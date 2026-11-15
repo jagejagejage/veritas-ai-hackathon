@@ -1,0 +1,48 @@
+{
+  "dataset": "fictional sample-cafe.csv",
+  "training_weeks": 5,
+  "holdout_weeks": 3,
+  "holdout_is_chronological_and_unseen_during_method_selection": true,
+  "selected_field_methods": {
+    "sales_walkin": "moving_average_4",
+    "invoices_collected": "moving_average_4",
+    "supplies": "naive",
+    "payroll": "seasonal_naive_2",
+    "rent": "seasonal_naive_4",
+    "other": "moving_average_4"
+  },
+  "weekly_net_cash_flow": [
+    {
+      "week": 6,
+      "actual": 6300.0,
+      "model": -575.0,
+      "baseline": -750.0
+    },
+    {
+      "week": 7,
+      "actual": 2700.0,
+      "model": 1825.0,
+      "baseline": -750.0
+    },
+    {
+      "week": 8,
+      "actual": 300.0,
+      "model": -575.0,
+      "baseline": -750.0
+    }
+  ],
+  "model": {
+    "mae_dollars_per_week": 2875.0,
+    "rmse_dollars_per_week": 4033.07
+  },
+  "baseline": {
+    "mae_dollars_per_week": 3850.0,
+    "rmse_dollars_per_week": 4571.93
+  },
+  "mae_skill_vs_baseline": 0.2532,
+  "limitations": [
+    "This is a single, very small holdout on the backend's fictional example data, not real business data.",
+    "The model chooses field methods with rolling-origin scores from only the training prefix; that is weak evidence with this sample size.",
+    "The in-API backtest is separately selection-in-sample and must not be reported as this holdout result."
+  ]
+}
