@@ -1,6 +1,7 @@
 import type { WeeklyCashFlow } from "@/lib/types";
 
 const FIELDS = ["sales_walkin", "invoices_collected", "supplies", "payroll", "rent", "other"] as const;
+const MAX_PROXY_BODY_BYTES = 256_000;
 type ForecastInput = {
   rows: WeeklyCashFlow[];
   horizon: number;
@@ -14,6 +15,32 @@ export type BackendForecastResult = {
   warnings: string[];
   backtest: { available: boolean; selectionInSample?: boolean; net_flow?: { model_mae: number; baseline_mae: number; model_rmse: number; baseline_rmse: number; skill_vs_baseline: number | null } };
 };
+
+async function readJsonLimited(request: Request): Promise<unknown> {
+  if (!request.body) throw new Error("invalid_request");
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_PROXY_BODY_BYTES) {
+        await reader.cancel();
+        throw new Error("request_too_large");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+  try { return JSON.parse(new TextDecoder().decode(body)) as unknown; }
+  catch { throw new Error("invalid_request"); }
+}
 
 function validInput(value: unknown): value is ForecastInput {
   if (!value || typeof value !== "object") return false;
@@ -63,18 +90,27 @@ function upstreamUrl(base: string, path: "forecast" | "whatif"): string {
   return url.toString();
 }
 
-async function postJson(fetcher: typeof fetch, url: string, body: unknown, signal: AbortSignal): Promise<unknown> {
-  const response = await fetcher(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(body), cache: "no-store", signal });
+async function postJson(fetcher: typeof fetch, url: string, body: unknown, signal: AbortSignal, token: string): Promise<unknown> {
+  const response = await fetcher(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json", "x-cashsense-backend-token": token }, body: JSON.stringify(body), cache: "no-store", signal });
   if (!response.ok) throw new Error("backend_unavailable");
   try { return await response.json(); } catch { throw new Error("backend_invalid_response"); }
 }
 
-export async function handleForecastProxy(request: Request, options: { backendUrl?: string; fetcher?: typeof fetch; timeoutMs?: number } = {}): Promise<Response> {
+export async function handleForecastProxy(request: Request, options: { backendUrl?: string; backendToken?: string; fetcher?: typeof fetch; timeoutMs?: number } = {}): Promise<Response> {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength && (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_PROXY_BODY_BYTES)) {
+    return Response.json({ error: "Forecast request exceeds the 256 KB limit." }, { status: 413 });
+  }
   let input: unknown;
-  try { input = await request.json(); } catch { return Response.json({ error: "Invalid forecast request." }, { status: 400 }); }
+  try { input = await readJsonLimited(request); }
+  catch (error) {
+    if (error instanceof Error && error.message === "request_too_large") return Response.json({ error: "Forecast request exceeds the 256 KB limit." }, { status: 413 });
+    return Response.json({ error: "Invalid forecast request." }, { status: 400 });
+  }
   if (!validInput(input)) return Response.json({ error: "Invalid forecast request." }, { status: 400 });
   if (input.assumptions.paymentDelayDays > 0) return Response.json({ error: "The Python backend cannot represent payment delays in days. This estimate must use the local fallback." }, { status: 422 });
   if (!options.backendUrl) return Response.json({ error: "The Python forecasting service is not configured." }, { status: 503 });
+  if (!options.backendToken) return Response.json({ error: "The Python forecasting service credential is not configured." }, { status: 503 });
 
   let forecastUrl: string;
   let whatIfUrl: string;
@@ -97,14 +133,14 @@ export async function handleForecastProxy(request: Request, options: { backendUr
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 8_000);
   try {
     const fetcher = options.fetcher ?? fetch;
-    const rawForecast = await postJson(fetcher, forecastUrl, forecastRequest, controller.signal);
+    const rawForecast = await postJson(fetcher, forecastUrl, forecastRequest, controller.signal, options.backendToken);
     if (!validForecast(rawForecast, input.horizon)) throw new Error("backend_invalid_response");
     const recommendedWeeks = rawForecast.recommended === "baseline"
       ? rawForecast.baseline_forecast.weeks
       : rawForecast.model.weeks;
     let points = recommendedWeeks.map((week, index) => ({ week: `Week ${index + 1}`, netCashFlow: week.net }));
     if (useWhatIf) {
-      const rawScenario = await postJson(fetcher, whatIfUrl, scenarioRequest, controller.signal);
+      const rawScenario = await postJson(fetcher, whatIfUrl, scenarioRequest, controller.signal, options.backendToken);
       if (!validWhatIf(rawScenario, input.horizon)) throw new Error("backend_invalid_response");
       points = rawScenario.after.weeks.map((week, index) => ({ week: `Week ${index + 1}`, netCashFlow: week.net }));
     }

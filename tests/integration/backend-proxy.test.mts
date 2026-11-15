@@ -15,14 +15,14 @@ const forecastResponse = {
 };
 
 async function call(body: unknown, options: Parameters<typeof handleForecastProxy>[1] = {}) {
-  return handleForecastProxy(new Request("http://localhost/api/backend/forecast", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), options);
+  return handleForecastProxy(new Request("http://localhost/api/backend/forecast", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), { backendToken: "test-only-secret", ...options });
 }
 
 test("maps dashboard records to the backend forecast contract and validates the response", async () => {
   const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
   const response = await call(input(), {
     backendUrl: "http://127.0.0.1:8000",
-    fetcher: async (url, init) => { calls.push({ url: String(url), body: JSON.parse(String(init?.body)) }); return Response.json(forecastResponse); },
+    fetcher: async (url, init) => { assert.equal(new Headers(init?.headers).get("x-cashsense-backend-token"), "test-only-secret"); calls.push({ url: String(url), body: JSON.parse(String(init?.body)) }); return Response.json(forecastResponse); },
   });
   assert.equal(response.status, 200);
   assert.deepEqual(calls, [{ url: "http://127.0.0.1:8000/forecast", body: { rows: [
@@ -79,6 +79,13 @@ test("reports missing, unavailable, malformed, and invalid backend results witho
   assert.equal(wrongShape.status, 503);
   const badStatus = await call(body, { backendUrl: "http://127.0.0.1:8000", fetcher: async () => Response.json({ detail: "bad request" }, { status: 422 }) });
   assert.equal(badStatus.status, 503);
+  const noToken = await call(body, { backendUrl: "http://127.0.0.1:8000", backendToken: "" });
+  assert.equal(noToken.status, 503);
+});
+
+test("rejects oversized proxy requests", async () => {
+  const response = await handleForecastProxy(new Request("http://localhost/api/backend/forecast", { method: "POST", headers: { "content-length": "300000" }, body: " ".repeat(300_000) }), { backendUrl: "http://127.0.0.1:8000", backendToken: "test-only-secret" });
+  assert.equal(response.status, 413);
 });
 
 test("rejects malformed dashboard requests", async () => {

@@ -1,9 +1,14 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
+os.environ.setdefault("CASHSENSE_BACKEND_TOKEN", "test-only-secret")
+os.environ.setdefault("CASHSENSE_CORS_ORIGINS", "https://cashsense.example")
+
 from app.main import app
 
-client = TestClient(app)
+client = TestClient(app, headers={"x-cashsense-backend-token": "test-only-secret"})
 
 FIELDS = ["sales_walkin", "invoices_collected", "supplies", "payroll", "rent", "other"]
 
@@ -16,9 +21,19 @@ def ds():
 
 
 def test_health_and_cors():
-    r = client.get("/health", headers={"Origin": "http://localhost:5173"})
+    r = client.get("/health", headers={"Origin": "https://cashsense.example"})
     assert r.json()["status"] == "ok"
-    assert r.headers["access-control-allow-origin"] == "*"
+    assert r.headers["access-control-allow-origin"] == "https://cashsense.example"
+    denied = client.get("/health", headers={"Origin": "https://untrusted.example"})
+    assert "access-control-allow-origin" not in denied.headers
+
+
+def test_api_requires_server_credential_and_limits_request_size():
+    public_client = TestClient(app)
+    assert public_client.post("/forecast", json={}).status_code == 401
+    assert public_client.post("/whatif", json={}).status_code == 401
+    too_large = client.post("/forecast", content=b" " * 1_000_001, headers={"content-type": "application/json"})
+    assert too_large.status_code == 413
 
 
 def test_upload_csv_roundtrip():

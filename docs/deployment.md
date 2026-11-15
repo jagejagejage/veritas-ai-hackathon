@@ -1,6 +1,6 @@
 # CashSense deployment on Vercel
 
-CashSense is a Next.js 15 App Router app. It can run on Vercel in demo mode without the Python forecasting service or an Anthropic account. The dashboard forecast and What if simulator run locally in the browser; the provisional Python adapter makes no network requests.
+CashSense is a Next.js 15 App Router app. It can run on Vercel in demo mode without the Python forecasting service or an Anthropic account. If the authenticated Python service is unavailable or unconfigured, the dashboard keeps its clearly labeled local forecast.
 
 ## Import the repository
 
@@ -17,6 +17,8 @@ Initially configure this in Vercel's **Production**, **Preview**, and **Developm
 | Name | Initial value | Required? | Notes |
 | --- | --- | --- | --- |
 | `CASHSENSE_AI_MODE` | `mock` | Recommended | Mock is also the server fallback when this variable is absent. Keep it set explicitly in Vercel. |
+| `CASHSENSE_BACKEND_URL` | unset until backend is configured | No for local fallback | HTTPS origin of the separately hosted FastAPI service. Server-only; never use `NEXT_PUBLIC_`. |
+| `CASHSENSE_BACKEND_TOKEN` | unset until backend is configured | No for local fallback | Shared secret matching FastAPI's token. Configure only in Vercel's encrypted environment-variable UI. Never use `NEXT_PUBLIC_`. |
 | `ANTHROPIC_API_KEY` | unset | No in mock mode | Secret, server-side only. Never name it `NEXT_PUBLIC_...`. |
 | `ANTHROPIC_MODEL` | unset | No in mock mode | Server-side model identifier. Required only when switching to live mode. |
 
@@ -51,16 +53,9 @@ For a preview, verify:
 
 ## Python forecasting backend
 
-Liam's FastAPI backend is included in `backend/` and has passed its local tests, but it is not deployed or connected to the dashboard. Vercel continues to run the Next.js app alone. The backend contract and exact integration gaps are in [`backend-integration.md`](./backend-integration.md).
+The dashboard is connected through a same-origin Next.js server route. The route validates and maps forecast requests, calls FastAPI over HTTPS with the server-only `CASHSENSE_BACKEND_TOKEN`, and keeps local estimates available when the service is unavailable. Payment-delay scenarios remain local because the API cannot represent the control faithfully. The API contract, authentication, request limits, and deployment setup are documented in [`backend-integration.md`](./backend-integration.md).
 
-For deployment, host the Python service separately (or use a deliberately tested Python-capable platform). Before doing so, add authentication, a shared rate limit, TLS, monitoring, and a durable/shared dataset strategy; the current memory store and wildcard CORS default are not suitable for a public multi-instance service. Then:
-
-1. Store the backend URL and any credential in Vercel server-only environment variables. Do not use `NEXT_PUBLIC_` names.
-2. Add a same-origin Next.js server route that makes a server-to-server request with strict request/response schemas and bounded timeouts. Do not forward arbitrary client URLs.
-3. Precisely map dashboard weekly rows, cash-balance semantics, and scenario controls; the existing provisional TypeScript adapter does not match this API. Keep local forecasts as a fallback and label their source.
-4. Test backend outages, timeout, invalid response, authentication failure, and rate limiting before enabling the connection. Avoid logging business figures or request bodies.
-
-There is no selected host, live URL, credential, or deployment configuration yet. No deployment has been performed.
+An optional Render blueprint is provided at [`../backend/render.yaml`](../backend/render.yaml). It generates a per-service secret, denies browser CORS origins by default, and disables automatic deployment. The Python app requires the matching token on every endpoint except health. Configure the Render service and copy its generated token into Vercel's encrypted `CASHSENSE_BACKEND_TOKEN` variable; set `CASHSENSE_BACKEND_URL` to its HTTPS origin. The backend is not deployed by this repository change. Keep the service at one instance until its process-local rate limiter and dataset store are replaced with shared services, and configure host-level rate limiting before broad public traffic.
 
 ## Rollback
 
@@ -68,8 +63,8 @@ In Vercel, open **Deployments**, select the last known-good Production deploymen
 
 ## Known readiness limits
 
-- There is no authentication or persistence; imported CSV and current dashboard state live in browser memory.
+- Imported CSV and current dashboard state live in browser memory.
 - The serverless in-memory limiter is best-effort only and does not coordinate across instances.
-- The Python backend is not present or called.
+- The Python backend requires hosting and matching server-side credentials before forecasts use it.
 - Dependency advisory status depends on a successful current `npm audit`; see [`security-audit.md`](./security-audit.md). A failed/offline audit is not a clean bill of health.
 - This review does not certify the application as production-secure. Do not upload real sensitive financial data until access control, shared rate limiting, privacy/retention, and operational monitoring have been reviewed.

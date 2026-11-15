@@ -14,8 +14,30 @@ The dashboard's payment-delay control is expressed in days. The backend accepts 
 
 ## Configuration and deployment limits
 
-For local development, run FastAPI bound to `127.0.0.1:8000` and set `CASHSENSE_BACKEND_URL=http://127.0.0.1:8000` in the Next.js server environment. Never use a `NEXT_PUBLIC_` variable for the backend URL or credentials. Missing configuration, timeouts, unavailable services, and invalid responses leave the existing local forecast active with a clear source label. Requests time out after eight seconds.
+For local development, run FastAPI bound to `127.0.0.1:8000` and set `CASHSENSE_BACKEND_URL=http://127.0.0.1:8000` plus the same random `CASHSENSE_BACKEND_TOKEN` in the Next.js and Python server environments. Never use a `NEXT_PUBLIC_` variable for either value. Missing configuration, timeouts, unavailable services, and invalid responses leave the existing local forecast active with a clear source label. Requests time out after eight seconds.
 
-The Python service currently has no authentication or shared rate limiter. Keep it on loopback or a private network with ingress restricted to the Next.js server. Do not give it a public unauthenticated URL. A public hosted deployment is blocked until a private network connection (or backend authentication plus ingress controls) and shared abuse controls are configured and verified. Vercel cannot reach a developer's loopback service; choose an appropriate private networking arrangement before hosting the dashboard.
+## Authentication, CORS, size limits, and abuse controls
+
+FastAPI requires the `X-CashSense-Backend-Token` header on every route except `GET /health` and CORS preflight. Comparison is constant-time and a missing server token fails closed. The Next.js proxy reads `CASHSENSE_BACKEND_TOKEN` only in server code and adds the header on upstream requests; it never returns or embeds the token in browser responses. Do not use the health response to expose environment details.
+
+CORS is deny-by-default. `CASHSENSE_CORS_ORIGINS` may contain a comma-separated list of exact origins if an approved browser client is added; the current dashboard calls the same-origin Next.js proxy and does not need direct browser access to FastAPI. The token header is intentionally not CORS-allowed.
+
+FastAPI caps request bodies at 1 MB and applies a process-local limit of 120 requests per minute across the instance. The Next proxy caps request bodies at 256 KB. These limits protect parsing and bound basic abuse, but are instance-local and are not a distributed rate limiter. Keep the Python service to one instance until a shared rate-limit store is configured, and enable host/platform edge rate limits before substantial public use.
+
+## Hosting plan
+
+The simplest Vercel-compatible arrangement is a separate Render Python web service using the included [`backend/render.yaml`](../backend/render.yaml), with the service's HTTPS URL and generated secret configured in Vercel. This is an authenticated HTTPS endpoint, not a private Vercel-to-Render network connection: every API route requires the shared secret, CORS denies browser origins by default, and `/health` is the only public route. Do not deploy it without the blueprint-generated token. Use the Render dashboard's secret environment variable controls to copy that value into Vercel's `CASHSENSE_BACKEND_TOKEN`; never paste it into a terminal transcript, source file, or chat.
+
+The Render blueprint sets its root to `backend`, installs the existing `backend/requirements.txt`, starts Uvicorn, provides `/health` for host health checks, generates a backend token, disables auto-deploys, and leaves CORS empty. After creating the service manually, configure Vercel server-only variables:
+
+| Variable | Value |
+| --- | --- |
+| `CASHSENSE_BACKEND_URL` | The Render service HTTPS origin, for example `https://<service>.onrender.com` |
+| `CASHSENSE_BACKEND_TOKEN` | The exact generated Render `CASHSENSE_BACKEND_TOKEN` secret |
+| `CASHSENSE_AI_MODE` | `mock` |
+
+The Next proxy rejects non-HTTPS remote backend URLs. Local loopback HTTP is permitted for development only. Do not configure `CASHSENSE_BACKEND_URL` or the shared token as `NEXT_PUBLIC_*`. Keep the Python service to one instance while using its process-local limiter and in-memory dataset store. The dashboard forecasting requests are stateless, but other dataset endpoints remain process-local. Put a platform-level rate limit in front of the public service before enabling broad access.
+
+No service has been created or deployed. Required external setup is a Render account with access to this repository, a manually created service from the blueprint, and Vercel access to set the URL and copy the generated token into a server-only secret variable. There is no Anthropic credential requirement; Anthropic remains in mock mode.
 
 Anthropic remains in mock mode. The AI context continues using the local estimate and is not switched to Python results.

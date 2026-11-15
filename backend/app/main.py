@@ -14,6 +14,7 @@ from .csv_io import CsvError
 from .forecasting import ForecastError
 from .schemas import DataRef, DatasetJson, ForecastRequest, Op, WhatIfRequest, ChatToolCall
 from .store import store
+from .security import RequestSecurityMiddleware
 from .whatif import ScenarioError
 
 MAX_UPLOAD_BYTES = 1_000_000
@@ -27,13 +28,19 @@ app = FastAPI(
     ),
 )
 
-_origins = [o.strip() for o in os.getenv("CASHSENSE_CORS_ORIGINS", "*").split(",") if o.strip()]
+_origins = [o.strip() for o in os.getenv("CASHSENSE_CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["content-type"],
+)
+app.add_middleware(
+    RequestSecurityMiddleware,
+    shared_secret=os.getenv("CASHSENSE_BACKEND_TOKEN"),
+    max_body_bytes=MAX_UPLOAD_BYTES,
+    requests_per_minute=120,
 )
 
 
