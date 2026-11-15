@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import Link from "next/link";
 import {
   Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -12,7 +13,10 @@ import {
   ShieldCheck, SlidersHorizontal, Sparkles, TrendingDown, Wallet, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useChat } from "@/components/ai/ChatProvider";
 import { buildForecast, categoryTotals, demoRows, toRecords } from "@/lib/demo-data";
+import { parseFinancialCsv } from "@/lib/csv-import";
+import type { FinancialContext } from "@/lib/ai/types";
 import type { WeeklyCashFlow } from "@/lib/types";
 
 const money = (value: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
@@ -21,30 +25,8 @@ const NAV = [
   { href: "#forecast", label: "Cash flow", icon: Gauge },
   { href: "#simulator", label: "What if?", icon: SlidersHorizontal },
   { href: "#activity", label: "Transactions", icon: Wallet },
+  { href: "/ai", label: "CashSense AI", icon: Sparkles },
 ];
-const REQUIRED = ["week", "sales_walkin", "invoices_collected", "supplies", "payroll", "rent", "other"] as const;
-const AMOUNTS = ["sales_walkin", "invoices_collected", "supplies", "payroll", "rent", "other"] as const;
-
-function parseCsv(text: string): WeeklyCashFlow[] {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) throw new Error("Add a header row and at least one week of data.");
-  const headers = lines[0].split(",").map((value) => value.trim().replace(/^\"|\"$/g, ""));
-  const missing = REQUIRED.filter((column) => !headers.includes(column));
-  if (missing.length) throw new Error(`Missing columns: ${missing.join(", " )}.`);
-  return lines.slice(1).filter((line) => line.trim()).map((line, index) => {
-    const values = line.split(",").map((value) => value.trim().replace(/^\"|\"$/g, ""));
-    const read = (column: typeof REQUIRED[number]) => values[headers.indexOf(column)];
-    const row: WeeklyCashFlow = {
-      week: read("week"), sales_walkin: Number(read("sales_walkin")), invoices_collected: Number(read("invoices_collected")),
-      supplies: Number(read("supplies")), payroll: Number(read("payroll")), rent: Number(read("rent")), other: Number(read("other")),
-    };
-    if (!row.week || AMOUNTS.some((key) => !Number.isFinite(row[key]) || row[key] < 0)) {
-      throw new Error(`Row ${index + 2} needs a week and non-negative numbers for every amount.`);
-    }
-    return row;
-  });
-}
-
 function StatCard({ title, value, detail, icon: Icon, trend, tone = "teal" }: {
   title: string; value: string; detail: string; icon: typeof Wallet; trend?: "up" | "down"; tone?: "teal" | "slate" | "amber";
 }) {
@@ -81,6 +63,7 @@ export default function Dashboard() {
   const [balanceDraft, setBalanceDraft] = useState("");
   const [editingBalance, setEditingBalance] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
+  const { setFinancialContext } = useChat();
   const records = useMemo(() => toRecords(rows, source), [rows, source]);
   const totals = useMemo(() => records.reduce((sum, row) => ({ revenue: sum.revenue + row.revenue, expenses: sum.expenses + row.expenses, net: sum.net + row.netCashFlow }), { revenue: 0, expenses: 0, net: 0 }), [records]);
   const average = Math.round(totals.net / Math.max(1, records.length));
@@ -96,13 +79,28 @@ export default function Dashboard() {
   const filtered = records.filter((row) => row.week.toLowerCase().includes(search.toLowerCase())).slice(-5).reverse();
   const demo = source === "demo";
 
+  useEffect(() => {
+    const context: FinancialContext = {
+      source: demo ? "demo" : "imported",
+      history: rows.slice(-12),
+      forecast: forecast.slice(rows.length),
+      spendingCategories: categories.map(({ name, value }) => ({ name, value })),
+      alerts: [{ title: "Invoice timing may be tight", detail: "A one-week delay in customer payments could reduce next week’s net cash flow." }],
+      currentCashBalance: cashBalance,
+      assumptions: { revenueChangePercent: revenueChange, expenseChange, paymentDelayDays: delay },
+    };
+    setFinancialContext(context);
+  }, [rows, demo, forecast, categories, cashBalance, revenueChange, expenseChange, delay, setFinancialContext]);
+
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
     setImportError(""); setImportSuccess(""); setIsImporting(true);
     try {
-      const parsed = parseCsv(await file.text());
-      setRows(parsed); setSource("import"); setImportSuccess(`${parsed.length} weeks imported from ${file.name}.`);
+      const parsed = parseFinancialCsv(await file.text());
+      setRows(parsed.rows); setSource("import");
+      setCashBalance(parsed.startingCashBalance);
+      setImportSuccess(`${parsed.rows.length} weeks imported from ${file.name}.${parsed.startingCashBalance === null ? " No starting cash balance was supplied; add it separately if you want to see projected cash." : " Starting cash balance imported."}`);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "We couldn't read that file. Check the CSV and try again.");
     } finally {
@@ -123,7 +121,7 @@ export default function Dashboard() {
         <span className="flex items-center gap-2.5 text-[13px] font-medium"><span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#e4f1ed] text-[10px] font-bold text-[#287666]">N</span> Northstar Studio</span>
       </div>
       <nav aria-label="Main navigation" className="space-y-1">
-        {NAV.map(({ href, label, icon: Icon }, index) => <a key={href} href={href} onClick={() => setMobileOpen(false)} className={`nav-link focus-ring flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] ${index === 0 ? "bg-[#e9f3f0] font-semibold text-[#286e63]" : "font-medium text-[#708287]"}`}><Icon size={17} strokeWidth={1.8}/>{label}{label === "What if?" && <span className="ml-auto rounded bg-white px-1.5 py-0.5 text-[10px] text-[#729087]">New</span>}</a>)}
+        {NAV.map(({ href, label, icon: Icon }, index) => <Link key={href} href={href} onClick={() => setMobileOpen(false)} className={`nav-link focus-ring flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] ${index === 0 ? "bg-[#e9f3f0] font-semibold text-[#286e63]" : "font-medium text-[#708287]"}`}><Icon size={17} strokeWidth={1.8}/>{label}{label === "What if?" && <span className="ml-auto rounded bg-white px-1.5 py-0.5 text-[10px] text-[#729087]">New</span>}</Link>)}
       </nav>
       <div className="mt-8 px-2"><span className="text-[11px] font-semibold text-[#9aa8ab]">YOUR BUSINESS</span><div className="mt-3 space-y-1"><a href="#insights" className="nav-link focus-ring flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-[#708287]"><TrendingDown size={17} strokeWidth={1.8}/>Spending</a><a href="#activity" className="nav-link focus-ring flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-[#708287]"><CalendarDays size={17} strokeWidth={1.8}/>Cash calendar</a></div></div>
       <div className="mt-auto">
@@ -139,7 +137,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-3"><button className="focus-ring min-h-11 min-w-11 rounded-md p-1.5 text-[#60767c] lg:hidden" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle navigation" aria-expanded={mobileOpen}><Menu size={19}/></button><div className="hidden items-center gap-2 text-[12px] text-[#88989c] sm:flex">Northstar Studio <span className="text-[#bdc8c6]">/</span> <span className="font-medium text-[#405960]">Overview</span></div><span translate="no" className="text-[13px] font-semibold lg:hidden">CashSense</span></div>
         <div className="flex items-center gap-2 sm:gap-3"><span className="hidden text-[11px] text-[#85969a] md:block">Last updated just now</span><button onClick={() => document.getElementById("alerts")?.scrollIntoView({ behavior: "smooth" })} className="focus-ring relative rounded-lg border border-[#e4ebe8] bg-white p-2 text-[#64797d] hover:bg-[#f2f6f4]" aria-label="View alerts"><Bell size={16}/><span className="absolute right-[7px] top-[6px] h-[5px] w-[5px] rounded-full bg-[#cf9855] ring-2 ring-white"/></button><Button onClick={() => uploadRef.current?.click()} size="sm" className="action-button" disabled={isImporting}>{isImporting ? <LoaderCircle size={15} className="animate-spin"/> : <FileUp size={15}/>}<span className="hidden sm:inline">{isImporting ? "Reading…" : "Import data"}</span></Button></div>
       </header>
-      {mobileOpen && <nav aria-label="Mobile navigation" className="absolute z-20 w-full border-b border-[#e6ecea] bg-white p-3 shadow-lg lg:hidden">{NAV.map((item) => <a key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className="focus-ring flex min-h-11 items-center gap-3 rounded-lg px-3 py-3 text-sm text-[#405960]"><item.icon size={17}/>{item.label}</a>)}</nav>}
+      {mobileOpen && <nav aria-label="Mobile navigation" className="absolute z-20 w-full border-b border-[#e6ecea] bg-white p-3 shadow-lg lg:hidden">{NAV.map((item) => <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className="focus-ring flex min-h-11 items-center gap-3 rounded-lg px-3 py-3 text-sm text-[#405960]"><item.icon size={17}/>{item.label}</Link>)}</nav>}
       <input ref={uploadRef} type="file" accept=".csv,text/csv" className="sr-only" onChange={handleUpload} aria-label="Choose a CSV file to import"/>
 
       <main id="overview" className="mx-auto max-w-[1450px] px-4 pb-12 pt-7 sm:px-7 sm:pt-9 lg:px-9">

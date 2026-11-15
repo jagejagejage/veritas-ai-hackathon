@@ -42,3 +42,11 @@ input[type="range"] { min-height: 24px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+.animate-chat-open { animation: chat-open 180ms ease-out both; transform-origin: bottom right; }
+.floating-chat-panel { width: min(420px, calc(100vw - 24px)); height: min(650px, calc(100dvh - 110px - env(safe-area-inset-bottom))); }
+.typing-dot { width: 5px; height: 5px; border-radius: 999px; background: #73a69a; animation: typing-pulse 1.1s ease-in-out infinite; }
+.typing-dot.delay-1 { animation-delay: 140ms; }
+.typing-dot.delay-2 { animation-delay: 280ms; }
+@keyframes chat-open { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes typing-pulse { 0%, 65%, 100% { opacity: .45; transform: translateY(0); } 32% { opacity: 1; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .animate-chat-open, .typing-dot { animation: none; } }

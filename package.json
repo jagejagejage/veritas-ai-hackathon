@@ -7,9 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:ai": "node --experimental-strip-types --test tests/ai/*.test.mts",
+    "test:data": "node --experimental-strip-types --test tests/data/*.test.mts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@radix-ui/react-slot": "^1.2.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
