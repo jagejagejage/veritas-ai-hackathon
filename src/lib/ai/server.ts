@@ -236,6 +236,9 @@ function systemPrompt(context: FinancialContext | null, scenarioText: string | n
 }
 
 export async function handleChatRequest(request: Request, env: Environment, dependencies: Dependencies): Promise<Response> {
+  const contentType = request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/json") return json({ error: "Send this request as application/json." }, 415);
+
   const now = dependencies.now?.() ?? Date.now();
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   if (!(dependencies.limiter ?? sharedLimiter).allow(ip, now)) return json({ error: "You’ve sent several messages in a short time. Wait a minute and try again." }, 429);

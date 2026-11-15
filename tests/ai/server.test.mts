@@ -15,10 +15,10 @@ const context: FinancialContext = {
   assumptions: { revenueChangePercent: 0, expenseChange: 0, paymentDelayDays: 0 },
 };
 
-function request(messages: unknown, financialContext: unknown = context, ip = "test-client") {
+function request(messages: unknown, financialContext: unknown = context, ip = "test-client", contentType = "application/json") {
   return new Request("http://localhost/api/ai/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-forwarded-for": ip },
+    headers: { "Content-Type": contentType, "x-forwarded-for": ip },
     body: JSON.stringify({ messages, context: financialContext }),
   });
 }
@@ -67,6 +67,16 @@ test("invalid requests and financial context are rejected", async () => {
   badContext.assumptions.expenseChange = 99_000;
   const badFinancialContext = await handleChatRequest(request([{ role: "user", content: "What is next?" }], badContext), {}, { callModel: async () => "", limiter: new RateLimiter() });
   assert.equal(badFinancialContext.status, 400);
+});
+
+test("chat API rejects form-style requests before using the model", async () => {
+  let calls = 0;
+  const response = await handleChatRequest(request([{ role: "user", content: "Summarize my cash flow" }], context, "test-client", "text/plain"), {}, {
+    callModel: async () => { calls += 1; return "unexpected"; }, limiter: new RateLimiter(),
+  });
+  assert.equal(response.status, 415);
+  assert.match((await response.json()).error, /application\/json/);
+  assert.equal(calls, 0);
 });
 
 test("simulator scenarios stay within dashboard limits and calculate from existing rows", async () => {
