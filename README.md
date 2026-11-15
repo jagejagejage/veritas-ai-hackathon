@@ -2,9 +2,6 @@
 
 Our shared GitHub repository for the Veritas AI High School Hackathon.
 
-**Team**
-- Jage: Codex
-- Liam: Claude Code
 
 **Goal:** Build and launch a working AI project together during the hackathon.
 
