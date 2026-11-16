@@ -68,7 +68,7 @@ Built by **Jage and Liam** for the **VERITAS AI International High School Hackat
 
 ## Demo video
 
-No public demo video link is currently included.
+[Watch the CashSense demo](https://youtu.be/bFDbm4rw4gQ?is=oZRydmn9PsWKXPza)
 
 ---
 
