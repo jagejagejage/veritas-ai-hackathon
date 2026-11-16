@@ -2,6 +2,7 @@
   "name": "cashsense",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test:ai": "node --experimental-strip-types --test tests/ai/*.test.mts",
     "test:data": "node --experimental-strip-types --test tests/data/*.test.mts",
-    "test:integration": "node --experimental-strip-types --test tests/integration/*.test.mts"
+    "test:integration": "node --experimental-strip-types --test tests/integration/*.test.mts",
+    "test:cash": "node --experimental-strip-types --test tests/cash/*.test.mts",
+    "test": "node --experimental-strip-types --test tests/ai/*.test.mts tests/cash/*.test.mts tests/data/*.test.mts tests/integration/*.test.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
