@@ -67,7 +67,7 @@ export function buildMappedWeeklyRows(columns: CsvMappingColumn[], weeks: string
   if (columns.some((column) => column.target === null)) throw new Error("Choose a category or Leave out for every column.");
   const weekColumns = columns.filter((column) => column.target === "week");
   if (weekColumns.length !== 1) throw new Error("Map exactly one column to Week.");
-  const targets = IMPORT_FIELDS.slice(1);
+  const targets = ["sales_walkin", "invoices_collected", "supplies", "payroll", "rent", "other"] as const;
   if (!columns.some((column) => targets.includes(column.target as typeof targets[number]))) throw new Error("Map at least one amount column before importing.");
   const weekColumn = weekColumns[0];
   const seen = new Set<string>();
