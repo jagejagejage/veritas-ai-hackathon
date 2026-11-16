@@ -1,71 +1,75 @@
-# Veritas AI Hackathon
+# CashSense
 
-Our shared GitHub repository for the Veritas AI High School Hackathon.
+**See a cash shortfall coming. Find a practical way through it.**
 
-**Team**
-- Jage: Codex
-- Liam: Claude Code
+CashSense helps small businesses understand when scheduled income and expenses could leave them short of cash. Its dashboard projects the balance week by week, explains potential trouble, and lets owners explore possible responses.
 
-**Goal:** Build and launch a working AI project together during the hackathon.
+**[Open the live demo](https://cashsense-five.vercel.app/)** · [View the deployed integration branch](https://github.com/jagejagejage/veritas-ai-hackathon/tree/integration/cashsense-liam)
 
-## CashSense
+> **For judges:** The live demo is deployed from `integration/cashsense-liam`. GitHub's default branch, `main`, currently contains an earlier implementation. Switch to the integration branch to review the code that matches the demo.
 
-A cash-flow early-warning app for small shops. It tells the owner the week they'll run short, by how much and why, then finds the cheapest way through it and drafts the messages to send.
+## What it does
 
-- `npm install && npm run dev`, then open http://localhost:3000. The fictional demo café loads straight away.
-- How the math and the AI are kept apart: [`docs/cashsense-ai.md`](./docs/cashsense-ai.md)
-- Optional Python forecasting backend (separate, not used by the main screen): [`backend/`](./backend/)
+- **Cash-flow dashboard:** Shows a projected weekly balance and highlights weeks below the business's cash cushion or below zero.
+- **Plain-language warnings:** Explains when a low balance is expected and which scheduled items contribute to it.
+- **Rescue planner:** Searches combinations of supported actions, such as deferring or splitting an expense, collecting an invoice early, or adding cash. Results are calculated by the app's TypeScript engine.
+- **What-if scenarios:** Lets users explore how changing the timing or amount of cash items affects the projection.
+- **CSV import:** Loads weekly business cash-flow data through a guided import flow. A sample CSV is included.
 
-## Branches
+The dashboard uses a **fictional café dataset** for demonstration. It is not real business or customer information.
 
-| Branch | Purpose |
-|---|---|
-| `main` | Final, working code |
-| `dev/jage` | Jage's work |
-| `dev/liam` | Liam's work |
+## Try it
 
-## How we work together
+Visit the [live demo](https://cashsense-five.vercel.app/) to explore the sample café. You can also download the sample CSV from the app.
 
-1. Work on our own branches.
-2. Push changes to GitHub regularly.
-3. Use pull requests to merge finished work into `main`.
-4. Don't edit the same files at the same time without communicating.
-5. Test everything before merging.
-6. Never upload API keys or passwords.
+## Run locally
 
-## Getting started
+The deployed version uses Next.js and runs its dashboard calculations in TypeScript. The main demo works without credentials or the Python service.
 
-Clone the repository:
+Requirements: Node.js with npm.
 
 ```bash
 git clone https://github.com/jagejagejage/veritas-ai-hackathon.git
 cd veritas-ai-hackathon
+git switch integration/cashsense-liam
+npm install
+npm run dev
 ```
 
-Switch to your branch:
+Open [http://localhost:3000](http://localhost:3000).
+
+### Optional Python backend
+
+The repository also includes a FastAPI backend for CSV handling, projections, forecasting, and what-if API endpoints. The dashboard's TypeScript engine remains the source of its displayed balance and rescue calculations; the Python backend is an optional service behind the existing server-side proxy.
+
+To start the backend locally (Python 3.10+):
 
 ```bash
-git switch dev/jage
-# Or dev/liam
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export CASHSENSE_BACKEND_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+uvicorn app.main:app --reload
 ```
 
-Save and upload changes:
+For the frontend proxy, set `CASHSENSE_BACKEND_URL=http://127.0.0.1:8000` and the same `CASHSENSE_BACKEND_TOKEN` in the Next.js server environment. See [backend setup](./docs/backend-integration.md) and the [backend README](./backend/README.md) for details.
 
-```bash
-git add .
-git commit -m "Updated project"
-git push
-```
+## How it is built
 
-## Hackathon plan
+- **Web app:** Next.js, React, TypeScript, and Recharts.
+- **Cash calculations:** Deterministic TypeScript functions using integer cents for projected balances, warnings, scenario changes, and rescue-plan search.
+- **Python service:** FastAPI backend with CSV validation and forecasting endpoints, available through the existing Next.js proxy when configured.
+- **AI status:** Claude integration code is present, but Claude is disabled in the deployed configuration. The dashboard's cash and rescue calculations do not depend on Claude.
 
-- [x] Create GitHub repository
-- [x] Set up branches
-- [ ] Connect Codex and Claude
-- [ ] Choose project idea
-- [ ] Divide responsibilities
-- [ ] Build the project
-- [ ] Test and deploy
-- [ ] Submit final demo
+## Team and event
 
-**Let's build something good.**
+Built by **Jage and Liam** for the **VERITAS AI International High School Hackathon 2026**.
+
+## Demo video
+
+No public demo video link is currently included.
+
+---
+
+CashSense is a hackathon demonstration. Its sample data is fictional, its projections depend on the information entered, and its scenarios are for educational purposes—not financial advice.
