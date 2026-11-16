@@ -76,7 +76,7 @@ export function buildMappedWeeklyRows(columns: CsvMappingColumn[], weeks: string
     if (!week) throw new Error(`Row ${index + 2} is missing its week.`);
     if (seen.has(week.toLowerCase())) throw new Error(`Row ${index + 2} duplicates week “${week}”.`);
     seen.add(week.toLowerCase());
-    const row: WeeklyCashFlow = { week, sales_walkin: 0, invoices_collected: 0, supplies: 0, payroll: 0, rent: 0, other: 0 };
+    const rowAmounts: Record<(typeof targets)[number], number> = { sales_walkin: 0, invoices_collected: 0, supplies: 0, payroll: 0, rent: 0, other: 0 };
     for (const column of columns) {
       if (!targets.includes(column.target as typeof targets[number])) continue;
       const raw = values[column.index]?.trim() ?? "";
@@ -84,9 +84,9 @@ export function buildMappedWeeklyRows(columns: CsvMappingColumn[], weeks: string
       const negative = /^\(.*\)$/.test(raw);
       const amount = Number(raw.replace(/[,$£€\s]/g, "").replace(/^\((.*)\)$/, "$1"));
       if (!Number.isFinite(amount)) throw new Error(`Row ${index + 2}, ${column.header}: “${raw}” is not a valid number.`);
-      row[column.target as typeof targets[number]] += negative ? -amount : amount;
+      rowAmounts[column.target as typeof targets[number]] += negative ? -amount : amount;
     }
-    return row;
+    return { week, ...rowAmounts };
   });
   const escapeCsv = (value: string | number) => {
     const cell = String(value);
