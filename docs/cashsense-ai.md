@@ -1,34 +1,42 @@
-# CashSense AI setup
+# How CashSense uses AI
 
-CashSense AI runs in mock mode unless the server explicitly sets `CASHSENSE_AI_MODE=live`.
+Rule: **AI understands and writes; code does the math.**
 
-## Mock mode
+## The engine (no AI)
 
-Set `CASHSENSE_AI_MODE=mock` (also the default when the variable is absent). Replies are generated locally with a short simulated delay. The route does not create an Anthropic client or send an external request. No key is required. The chat marks these replies as examples.
+`src/lib/cash/` is pure TypeScript with integer cents.
 
-## Live Claude mode
+- `engine.ts`: week-by-week balance from scheduled items, red/yellow/green status, and the plain-English warning.
+- `scenario.ts`: the only shape the AI may produce (`shift`, `add`, `scale`, `remove`), a strict validator, and code-written descriptions.
+- `rescue.ts`: the Rescue Plan search. It tries every allowed move on the real items (reschedule, split, pay early for a discount, defer for a fee), in combinations of up to 3. It keeps minimal plans that stay above the cushion every week and ranks them: moves you control, then free asks, then moves that cost money. Each plan shows its cost as a yearly rate, is stress-tested against the biggest payer arriving a week late, and never moves payroll.
 
-Add these server-only environment variables to your local `.env.local` or hosting environment:
+Hand-checked numbers for the demo café (opening $2,000):
 
-```dotenv
-CASHSENSE_AI_MODE=live
-ANTHROPIC_API_KEY=your-server-side-key
-ANTHROPIC_MODEL=claude-haiku-4-5-20251001
-```
+| Week | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| Ending balance | 1,700 | 2,000 | 2,200 | 2,500 | **−1,300** | 5,000 | 7,700 | 8,000 |
 
-The configured model ID is passed to the Anthropic SDK on the server. Changing `ANTHROPIC_MODEL` does not change the UI or add a model selector. Live mode fails closed with a configuration error if either Anthropic value is missing. Never prefix credentials with `NEXT_PUBLIC_` or commit `.env.local`.
+Money in over 8 weeks: $40,500. Money out: $34,500. Profit: +$6,000.
 
-The current implementation caps the request to 480 output tokens, disables SDK retries, applies a 15-second SDK timeout, bounds request-body reads, and applies an in-memory limit of 12 messages per minute per observed client address. Messages are sent only after the user submits a question. Conversation history and dashboard context stay in provider memory for client-side route navigation; they are not written to local storage or a database.
+## The two AI jobs
 
-The in-memory limit is instance-local and is not sufficient protection for a public serverless deployment. Production live mode therefore fails closed with HTTP 503 until shared rate limiting and spend controls are added. Local live-mode integration checks can use a stubbed model callback without contacting Anthropic. No real Claude request is needed for those checks.
+1. **`/api/ask`**: translates a question into a scenario. Claude returns JSON constrained by a schema. The server validates it, the browser validates it again, and only then does the engine run it. Anything invalid is shown as "Not run".
+2. **`/api/drafts`**: writes the messages for a plan. The server re-runs the search itself, so it never trusts plan numbers sent from the browser. Every number in Claude's draft, whether digits or words, must come from the plan. Interest, penalty, deadline and legal wording are blocked. If a draft fails, the checked template is used and the UI says why.
 
-Supported natural-language simulations use the CashSense frontend forecast helper and current dashboard history. These are local simulator estimates, not results from the Python backend. Revenue changes are limited to ±30%, one-time expense increases to $10,000, and payment delays to 21 days. If a question cannot map safely to those controls, the assistant explains the limitation.
+## Modes
+
+| `CASHSENSE_AI_MODE` | What happens |
+|---|---|
+| unset / `rules` | Built-in rules translate questions; templates write messages. No network calls. |
+| `live` + `ANTHROPIC_API_KEY` | Claude does both jobs (`ANTHROPIC_MODEL`, default `claude-opus-5-5`). Falls back to rules on any error. |
+
+Production builds always stay in rules mode. Live Claude calls remain disabled until shared rate limiting and hard spend controls are in place.
 
 ## Checks
 
 ```sh
+npm test        # engine, AI handlers (with stubbed model), CSV, backend proxy
 npm run lint
 npm run typecheck
-npm run test:ai
 npm run build
 ```

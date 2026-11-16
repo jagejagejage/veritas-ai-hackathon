@@ -8,7 +8,13 @@ Our shared GitHub repository for the Veritas AI High School Hackathon.
 
 **Goal:** Build and launch a working AI project together during the hackathon.
 
-The Next.js dashboard and FastAPI forecasting backend are separate components. The backend source and local instructions are in [`backend/`](./backend/); it is not yet hosted or connected to the dashboard. See [`docs/backend-integration.md`](./docs/backend-integration.md) and [`docs/deployment.md`](./docs/deployment.md) for the current contract and deployment gaps.
+## CashSense
+
+A cash-flow early-warning app for small shops. It tells the owner the week they'll run short, by how much and why, then finds the cheapest way through it and drafts the messages to send.
+
+- `npm install && npm run dev`, then open http://localhost:3000. The fictional demo café loads straight away.
+- How the math and the AI are kept apart: [`docs/cashsense-ai.md`](./docs/cashsense-ai.md)
+- Optional Python forecasting backend (separate, not used by the main screen): [`backend/`](./backend/)
 
 ## Branches
 
